@@ -31,24 +31,30 @@ _stats = {
 }
 
 def _db_positions() -> list[dict]:
-    if not DB_PATH.exists():
+    """Pull open positions from SQLite if it exists."""
+    if not DH_PATH.exists():
         return []
     try:
         con = sqlite3.connect(DB_PATH)
         con.row_factory = sqlite3.Row
-        rows = con.execute("SELECT * FROM trades WHERE status='open' ORDER BY opened_at DESC LIMIT 20").fetchall()
+        rows = con.execute(
+            "SELECT * FROM trades WHERE status='open' ORDER BY opened_at DESC LIMIT 20"
+        ).fetchall()
         con.close()
         return [dict(r) for r in rows]
     except Exception:
         return []
 
 def _db_history() -> list[dict]:
+    """Pull closed trades from SQLite."""
     if not DB_PATH.exists():
         return []
     try:
         con = sqlite3.connect(DB_PATH)
         con.row_factory = sqlite3.Row
-        rows = con.execute("SELECT * FROM trades WHERE status='closed' ORDER BY closed_at DESC LIMIT 50").fetchall()
+        rows = con.execute(
+            "SELECT * FROM trades WHERE status='closed' ORDER BY closed_at DESC LIMIT 50"
+        ).fetchall()
         con.close()
         return [dict(r) for r in rows]
     except Exception:
@@ -56,7 +62,7 @@ def _db_history() -> list[dict]:
 
 @app.route("/")
 def index():
-    return jsonify({"status": "ok", "service": "WeatherEdge Bot API", "uptime": BOT_START})
+    return jsonify({"status": "ok", "service": "WeatherEdge Bot API"})
 
 @app.route("/api/stats")
 def stats():
@@ -76,7 +82,7 @@ def log():
 
 @app.route("/api/health")
 def health():
-    return jsonify({"status": "healthy", "mode": _stats["bot_mode"], "last_scan": _stats["last_scan"], "uptime": BOT_START})
+    return jsonify({"status": "healthy", "mode": _stats["bot_mode"], "last_scan": _stats["last_scan"]})
 
 def update_stats(markets: int, edges: int, live: int):
     _stats["markets_scanned"] = markets
@@ -90,5 +96,4 @@ def add_log(msg: str, level: str = "info"):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    print(f"WeatherEdge API starting on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
