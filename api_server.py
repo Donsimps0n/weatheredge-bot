@@ -178,9 +178,21 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started — t.me/Aidolf_bot")
+    print("Telegram bot started â t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
+
+@app.route("/landing")
+def landing():
+    try:
+        from flask import send_file, Response
+        import os
+        lpath = os.path.join(os.path.dirname(__file__), 'landing.html')
+        if os.path.exists(lpath):
+            return Response(open(lpath).read(), mimetype='text/html')
+        return Response('<h1>Landing page not found</h1>', mimetype='text/html')
+    except Exception as e:
+        return str(e), 500
 
 @app.route("/")
 def index(): return jsonify({"status": "ok", "service": "WeatherEdge Bot API", "models": _stats["models"], "uptime": BOT_START})
