@@ -248,7 +248,7 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
+    print("Telegram bot started ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
 
@@ -307,6 +307,24 @@ def scan():
         results = []
         edges = []
 
+        # ── Pre-fetch forecasts for all cities (once, not per-market) ──
+        from probability_calculator import parse_bin_range, prob_for_bin
+        city_forecast_cache = {}
+        today = date.today()
+        for _days in range(0, 8):
+            _tdate = today + timedelta(days=_days)
+            for _city in CITIES:
+                _key = f"{_city}_{_tdate}"
+                if _key not in _forecast_cache:
+                    try:
+                        _fc = consensus_forecast(_city, _tdate)
+                        if _fc:
+                            _forecast_cache[_key] = _fc
+                            city_forecast_cache[_key] = _fc
+                    except:
+                        pass
+        _add_log(f"Pre-fetched forecasts for {len(city_forecast_cache)} city/date combos")
+
         for event in events:
             title = event.get("title","")
             city = next((c for c in CITIES if c.lower() in title.lower()), None)
@@ -337,8 +355,9 @@ def scan():
                 yes_price = float(prices[0]) if prices else 0.5
                 vol = float(mkt.get("volume") or 0)
 
-                # 4-model consensus for this market
-                fc = consensus_forecast(city, target_date) if target_date else None
+                # Look up from pre-fetched cache (no per-market API call)
+                _cache_key = f"{city}_{target_date}" if target_date else None
+                fc = _forecast_cache.get(_cache_key) or (consensus_forecast(city, target_date) if target_date else None)
                 no_price = round(1.0 - yes_price, 4)
                 days_ahead = (target_date - date.today()).days if target_date else 0
 
@@ -349,8 +368,7 @@ def scan():
                 best_side = "YES"
                 best_edge = 0.0
                 if fc and fc.get("samples"):
-                    from probability_calculator import prob_for_bin
-                    from probability_calculator import parse_bin_range, BinRange
+
                     try:
                         br = parse_bin_range(mkt.get("question",""))
                         if br:
