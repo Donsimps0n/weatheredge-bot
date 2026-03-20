@@ -287,7 +287,7 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
+    print("Telegram bot started ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
 
@@ -304,7 +304,9 @@ def landing():
         return str(e), 500
 
 @app.route("/")
-def index(): return jsonify({"status": "ok", "service": "WeatherEdge Bot API", "models": _stats["models"], "uptime": BOT_START})
+def index(): return jsonify({"status": "ok", "service": "WeatherEdge Bot API", "models": _stats["models"],
+        "cache_size": len(_forecast_cache),
+        "cache_warming": _cache_warming, "uptime": BOT_START})
 
 @app.route("/api/stats")
 def stats(): return jsonify(_stats)
@@ -333,7 +335,7 @@ def forecast_city(city):
 @app.route("/api/scan")
 def scan():
     """Full scan: fetch markets + 4-model consensus forecast + edge detection."""
-    # Cache is maintained by background warmer thread â do not clear here
+    # Cache is maintained by background warmer thread Ã¢ÂÂ do not clear here
     try:
         resp = requests.get("https://gamma-api.polymarket.com/events",
             params={"tag_slug":"weather","active":"true","closed":"false","limit":"200",
@@ -346,7 +348,7 @@ def scan():
         results = []
         edges = []
 
-        # Ã¢ÂÂÃ¢ÂÂ Pre-fetch forecasts for all cities (once, not per-market) Ã¢ÂÂÃ¢ÂÂ
+        # ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Pre-fetch forecasts for all cities (once, not per-market) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
         from probability_calculator import parse_bin_range, prob_for_bin
         city_forecast_cache = {}
         today = date.today()
@@ -396,7 +398,7 @@ def scan():
 
                 # Look up from pre-fetched cache (no per-market API call)
                 _cache_key = f"{city}_{target_date}" if target_date else None
-                fc = _forecast_cache.get(_cache_key) or (consensus_forecast(city, target_date) if target_date else None)
+                fc = _forecast_cache.get(_cache_key)  # Cache only — no blocking API calls in scan
                 no_price = round(1.0 - yes_price, 4)
                 days_ahead = (target_date - date.today()).days if target_date else 0
 
