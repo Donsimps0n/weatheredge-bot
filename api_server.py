@@ -23,6 +23,36 @@ _stats = {
 }
 _scan_log = []
 _forecast_cache = {}
+_cache_warming = False
+
+def _warm_forecast_cache():
+    """Background thread: pre-fetch forecasts for all cities/dates every 30 min."""
+    import time
+    global _cache_warming
+    while True:
+        _cache_warming = True
+        warmed = 0
+        today = date.today()
+        for _days in range(0, 8):
+            _tdate = today + timedelta(days=_days)
+            for _city in CITIES:
+                _key = f"{_city}_{_tdate}"
+                if _key not in _forecast_cache:
+                    try:
+                        _fc = consensus_forecast(_city, _tdate)
+                        if _fc:
+                            _forecast_cache[_key] = _fc
+                            warmed += 1
+                    except:
+                        pass
+        _cache_warming = False
+        _add_log(f"Cache warm complete: {warmed} new forecasts ({len(_forecast_cache)} total)")
+        time.sleep(1800)  # re-warm every 30 minutes
+
+# Start background cache warmer thread on import
+import threading
+_warmer_thread = threading.Thread(target=_warm_forecast_cache, daemon=True)
+_warmer_thread.start()
 
 CITIES = [
     # North America
@@ -248,7 +278,7 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
+    print("Telegram bot started ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
 
@@ -294,7 +324,7 @@ def forecast_city(city):
 @app.route("/api/scan")
 def scan():
     """Full scan: fetch markets + 4-model consensus forecast + edge detection."""
-    _forecast_cache.clear()  # Fresh forecasts each scan
+    # Cache is maintained by background warmer thread — do not clear here
     try:
         resp = requests.get("https://gamma-api.polymarket.com/events",
             params={"tag_slug":"weather","active":"true","closed":"false","limit":"200",
@@ -307,7 +337,7 @@ def scan():
         results = []
         edges = []
 
-        # ── Pre-fetch forecasts for all cities (once, not per-market) ──
+        # ââ Pre-fetch forecasts for all cities (once, not per-market) ââ
         from probability_calculator import parse_bin_range, prob_for_bin
         city_forecast_cache = {}
         today = date.today()
