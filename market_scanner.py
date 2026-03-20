@@ -203,3 +203,6 @@ class MarketScanner:
         opportunities.sort(key=lambda x: x.edge / max(x.confidence, 0.1), reverse=True)
         log.info(f"Found {len(opportunities)} opportunities across {days_ahead} days")
         return opportunities
+
+# Backwards compatibility alias
+WeatherMarket = MarketOpportunity
