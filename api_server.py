@@ -174,6 +174,14 @@ def _add_log(msg, level="info"):
     _scan_log.append({"time": datetime.now(timezone.utc).strftime("%H:%M:%S"), "msg": msg, "level": level})
     if len(_scan_log) > 500: _scan_log.pop(0)
 
+# Start Telegram bot in background thread at module load time (works with Flask)
+try:
+    from telegram_bot import start_telegram_bot
+    start_telegram_bot()
+    print("Telegram bot started — t.me/Aidolf_bot")
+except Exception as e:
+    print(f"Telegram bot failed: {e}")
+
 @app.route("/")
 def index(): return jsonify({"status": "ok", "service": "WeatherEdge Bot API", "models": _stats["models"], "uptime": BOT_START})
 
@@ -318,13 +326,6 @@ def edge_for_market(condition_id):
             "total_samples": len(fc["samples"]),
         }
     })
-
-# Start Telegram bot (24/7 background thread)
-try:
-    from telegram_bot import start_telegram_bot
-    start_telegram_bot()
-except Exception as e:
-    print(f"Telegram bot failed to start: {e}")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
