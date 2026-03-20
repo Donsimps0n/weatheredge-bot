@@ -104,7 +104,7 @@ def _load_config():
     mode_raw = _get("TPADI^G_MODE", "PAPER").upper()
     try: trading_mode = TradingMode(mode_raw)
     except: trading_mode = TradingMode.PAPER
-    cities_raw = _get("CITIES", "New York,London,Tokyo,Seoul,Dubai,Sydney,Paris,Chicago,Miami")
+    cities_raw = _get("CITIES", "New York,London,Tokyo,Seoul,Dubai,Sydney,Paris,Chicago,Miami,Atlanta,Seattle,Toronto,Lucknow,Shanghai,Milan,Singapore,Warsaw,Wellington,Dallas,Ankara,Hong Kong,Buenos Aires,Madrid,Tel Aviv,Munich,Sao Paulo,Shenzhen,Taipei,Beijing,Chongqing,Chengdu,Wuhan,Los Angeles,Berlin,Amsterdam,Istanbul,Moscow,Bangkok,Lagos,Cairo,Mumbai,Mexico City")
     cities = [c.strip() for c in cities_raw.split(",") if c.strip()]
     Path("data").mkdir(exist_ok=True)
     Path("logs").mkdir(exist_ok=True)
