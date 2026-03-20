@@ -319,6 +319,13 @@ def edge_for_market(condition_id):
         }
     })
 
+# Start Telegram bot (24/7 background thread)
+try:
+    from telegram_bot import start_telegram_bot
+    start_telegram_bot()
+except Exception as e:
+    print(f"Telegram bot failed to start: {e}")
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     print(f"WeatherEdge API starting on port {port} with 4-model consensus")
