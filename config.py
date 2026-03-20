@@ -88,12 +88,71 @@ class BotConfig:
     def is_paper(self): return self.trading_mode == TradingMode.PAPER
 
 CITY_COORDS = {
-    "New York": (40.7769, -73.8740), "Chicago": (41.9742, -87.9073),
-    "Miami": (25.7959, -80.2870), "Seattle": (47.4489, -122.3094),
-    "Atlanta": (33.6407, -84.4277), "London": (51.4775, -0.4614),
-    "Paris": (49.0128, 2.5500), "Tokyo": (35.5533, 139.7811),
-    "Seoul": (37.4692, 126.4505), "Dubai": (25.2528, 55.3644),
-    "Sydney": (-33.9399, 151.1753), "Tel Aviv": (32.0114, 34.8867),
+    # --- North America ---
+    "New York":      (40.6413, -73.7781),  # KJFK
+    "Chicago":       (41.9742, -87.9073),  # KORD
+    "Miami":         (25.7959, -80.2870),  # KMIA
+    "Atlanta":       (33.6407, -84.4277),  # KATL
+    "Seattle":       (47.4489, -122.3094), # KSEA
+    "Los Angeles":   (33.9425, -118.4081), # KLAX
+    "Dallas":        (32.8998, -97.0403),  # KDFW
+    "Toronto":       (43.6777, -79.6248),  # CYYZ
+    "Vancouver":     (49.1967, -123.1815), # CYVR
+    "Mexico City":   (19.4363, -99.0721),  # MMMX
+    # --- South America ---
+    "Sao Paulo":     (-23.4356, -46.4731), # SBGR
+    "Buenos Aires":  (-34.8222, -58.5358), # SAEZ
+    # --- Europe ---
+    "London":        (51.4775, -0.4614),   # EGLL
+    "Paris":         (49.0128,  2.5500),   # LFPG
+    "Milan":         (45.6306,  8.7231),   # LIMC
+    "Madrid":        (40.4936, -3.5668),   # LEMD
+    "Barcelona":     (41.2974,  2.0833),   # LEBL
+    "Berlin":        (52.3667, 13.5033),   # EDDB
+    "Munich":        (48.3537, 11.7750),   # EDDM
+    "Amsterdam":     (52.3086,  4.7639),   # EHAM
+    "Warsaw":        (52.1657, 20.9671),   # EPWA
+    "Vienna":        (48.1103, 16.5697),   # LOWW
+    "Zurich":        (47.4582,  8.5555),   # LSZH
+    "Rome":          (41.8003, 12.2389),   # LIRF
+    "Stockholm":     (59.6519, 17.9186),   # ESSA
+    "Oslo":          (60.1939, 11.1004),   # ENGM
+    "Copenhagen":    (55.6180, 12.6560),   # EKCH
+    "Helsinki":      (60.3183, 24.9497),   # EFHK
+    "Dublin":        (53.4213, -6.2700),   # EIDW
+    "Lisbon":        (38.7756, -9.1354),   # LPPT
+    "Athens":        (37.9364, 23.9445),   # LGAV
+    "Istanbul":      (41.2753, 28.7519),   # LTFM
+    "Ankara":        (40.1281, 32.9951),   # LTAC
+    # --- Middle East / Africa ---
+    "Dubai":         (25.2528, 55.3644),   # OMDB
+    "Tel Aviv":      (32.0114, 34.8867),   # LLBG
+    "Cairo":         (30.1219, 31.4056),   # HECA
+    "Lagos":         ( 6.5774,  3.3212),   # DNMM
+    "Nairobi":       (-1.3192, 36.9275),   # HKJK
+    "Johannesburg":  (-26.1392, 28.2460),  # FAOR
+    # --- South / Southeast Asia ---
+    "Mumbai":        (19.0896, 72.8656),   # VABB
+    "Delhi":         (28.5562, 77.1000),   # VIDP
+    "Lucknow":       (26.7606, 80.8893),   # VILK
+    "Bangkok":       (13.6811, 100.7472),  # VTBS
+    "Kuala Lumpur":  ( 2.7456, 101.7099),  # WMKK
+    "Singapore":     ( 1.3644, 103.9915),  # WSSS
+    "Jakarta":       (-6.1256, 106.6559),  # WIII
+    # --- East Asia ---
+    "Tokyo":         (35.5533, 139.7811),  # RJTT
+    "Seoul":         (37.4692, 126.4505),  # RKSI
+    "Beijing":       (40.0799, 116.5846),  # ZBAA
+    "Shanghai":      (31.1443, 121.8083),  # ZSPD
+    "Hong Kong":     (22.3080, 113.9185),  # VHHH
+    "Shenzhen":      (22.6396, 113.8107),  # ZGSZ
+    "Taipei":        (25.0777, 121.2328),  # RCTP
+    "Chongqing":     (29.7192, 106.6419),  # ZUCK
+    "Chengdu":       (30.5785, 103.9473),  # ZUUU
+    "Wuhan":         (30.7838, 114.2081),  # ZHHH
+    # --- Oceania ---
+    "Sydney":        (-33.9399, 151.1753), # YSSY
+    "Wellington":    (-41.3272, 174.8051), # NZWN
 }
 
 def get_city_coords(city):
