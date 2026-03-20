@@ -1,36 +1,63 @@
 """
-fast_pipeline.py - Async concurrent pipeline, 13x faster.
+fast_pipeline.py - Scan pipeline that wires all components together.
 """
-import asyncio
 import logging
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 from config import cfg
 from market_scanner import MarketScanner, WeatherMarket
-from forecast_fetcher import ForecastFetcher, ForecastResult
-from probability_calculator import prob_for_bin
-from edge_calculator import EdgeCalculator, EdgeResult
+from forecast_fetcher import ForecastFetcher
+from probability_calculator import prob_for_bin, parse_bin_range, ProbabilityCalculator
+from edge_calculator import EdgeCalculator
 from trader import PortfolioTrader as Trader
 log = logging.getLogger(__name__)
+
 
 class FastPipeline:
     def __init__(self, trader: Trader):
         self.scanner = MarketScanner()
         self.fetcher = ForecastFetcher()
         self.calc = ProbabilityCalculator()
-        self.edge_calc = EdgeCalculator(bankroll=trader.get_bankroll())
+        self.edge_calc = EdgeCalculator(bankroll=cfg.risk.paper_bankroll_usd)
         self.trader = trader
+
     def run_scan(self) -> Dict:
-        markets = self.scanner.scan()
-        log.info("Pipeline: scanning %d markets", len(markets))
-        opportunities = []
-        for market in markets:
-            forecast = self.fetcher.get_forecast(market.city, market.target_date)
-            if not forecast or len(forecast.daily_max_samples) < cfg.weather.min_ensemble_members:
-                continue
-            model_prob = self.calc.market_probability(market, forecast)
-            edge_result = self.edge_calc.best_side(market, model_prob)
-            if edge_result.is_tradeable:
-                opportunities.append((market, edge_result))
-                log.info("EDGE: %s %s %s %.3f", market.city, market.bin_range.label, edge_result.side, edge_result.edge)
-        return {"markets_scanned": len(markets), "opportunities": opportunities}
+        """Run full scan: fetch forecasts, scan markets, return opportunities."""
+        from config import CITY_COORDS
+        cities = list(CITY_COORDS.keys())
+
+        # Fetch forecasts for all cities
+        forecasts = {}
+        for city in cities:
+            try:
+                fc = self.fetcher.fetch(city, date.today())
+                if fc and fc.samples:
+                    forecasts[city] = {"samples": fc.samples, "std_c": fc.std_c}
+            except Exception as e:
+                log.debug(f"Forecast failed for {city}: {e}")
+
+        # Scan markets using all forecast data
+        open_positions = self.trader.get_open_positions()
+        self.scanner.update_positions(open_positions)
+        opportunities = self.scanner.scan(forecasts)
+
+        return {
+            "opportunities": [
+                {
+                    "condition_id": o.condition_id,
+                    "question": o.question,
+                    "city": o.city,
+                    "side": o.side,
+                    "model_prob": round(o.model_prob, 4),
+                    "market_price": round(o.market_price, 4),
+                    "edge": round(o.edge, 4),
+                    "kelly_f": round(o.kelly_f, 4),
+                    "position_usd": o.position_usd,
+                    "days_ahead": o.days_ahead,
+                    "confidence": round(o.confidence, 2),
+                }
+                for o in opportunities
+            ],
+            "cities_fetched": len(forecasts),
+            "total_opportunities": len(opportunities),
+        }
