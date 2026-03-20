@@ -1,52 +1,97 @@
 """
-edge_calculator.py - Computes edge, Kelly sizing, and EV.
+edge_calculator.py - Edge calculation for YES and NO sides.
+Uses model probability vs market price with Kelly sizing.
 """
 import logging
 from dataclasses import dataclass
-from typing import Optional
-import numpy as np
-from config import cfg
+from typing import Tuple
 log = logging.getLogger(__name__)
 
 @dataclass
 class EdgeResult:
-    side: str; model_prob: float; market_price: float; edge: float
-    ev_net: float; kelly_f: float; position_usd: float
-    is_tradeable: bool; note: str = ""
+    side: str
+    model_prob: float
+    market_price: float
+    edge: float
+    ev_net: float
+    kelly_f: float
+    position_usd: float
+    is_tradeable: bool
+    note: str = ""
 
 class EdgeCalculator:
-    def __init__(self, bankroll=1000.0):
+    TAKER_FEE = 0.02   # 2% Polymarket taker fee
+    MIN_EDGE  = 0.05   # 5% minimum edge to trade
+    MIN_PRICE = 0.02   # ignore sub-2c markets
+    MAX_PRICE = 0.98   # ignore near-certain markets
+
+    def __init__(self, bankroll: float = 1000.0):
         self.bankroll = bankroll
-    def update_bankroll(self, bankroll): self.bankroll = bankroll
-    def best_side(self, market, model_prob_result):
-        if isinstance(model_prob_result, tuple):
-            p, u = model_prob_result
+
+    def update_bankroll(self, bankroll: float):
+        self.bankroll = bankroll
+
+    def _kelly(self, p: float, price: float) -> float:
+        """Full Kelly fraction for binary market."""
+        if price <= 0 or price >= 1: return 0.0
+        b = (1 - price) / price   # net odds on YES
+        q = 1 - p
+        return max(0.0, (b * p - q) / b)
+
+    def calc_yes(self, model_prob: float, yes_price: float,
+                 spread: float = 0.0) -> EdgeResult:
+        """Calculate edge buying YES."""
+        if yes_price < self.MIN_PRICE or yes_price > self.MAX_PRICE:
+            return EdgeResult("YES", model_prob, yes_price, 0, 0, 0, 0, False, "price_out_of_range")
+        # Widen probability for uncertainty: shrink toward 0.5 by spread
+        adj_prob = model_prob + (0.5 - model_prob) * min(spread / 10.0, 0.3)
+        edge = adj_prob - yes_price - self.TAKER_FEE
+        if edge < self.MIN_EDGE:
+            return EdgeResult("YES", adj_prob, yes_price, edge, 0, 0, 0, False, "insufficient_edge")
+        ev = edge * (1 - yes_price) - (1 - adj_prob) * yes_price
+        kelly = self._kelly(adj_prob, yes_price)
+        return EdgeResult("YES", adj_prob, yes_price, edge, ev, kelly, 0, True)
+
+    def calc_no(self, model_prob: float, yes_price: float,
+                spread: float = 0.0) -> EdgeResult:
+        """Calculate edge buying NO (= buying 1 - yes_price)."""
+        no_price = 1.0 - yes_price
+        no_prob = 1.0 - model_prob
+        if no_price < self.MIN_PRICE or no_price > self.MAX_PRICE:
+            return EdgeResult("NO", no_prob, no_price, 0, 0, 0, 0, False, "price_out_of_range")
+        adj_prob = no_prob + (0.5 - no_prob) * min(spread / 10.0, 0.3)
+        edge = adj_prob - no_price - self.TAKER_FEE
+        if edge < self.MIN_EDGE:
+            return EdgeResult("NO", adj_prob, no_price, edge, 0, 0, 0, False, "insufficient_edge")
+        ev = edge * (1 - no_price) - (1 - adj_prob) * no_price
+        kelly = self._kelly(adj_prob, no_price)
+        return EdgeResult("NO", adj_prob, no_price, edge, ev, kelly, 0, True)
+
+    def best_side(self, yes_price: float, model_prob: float,
+                  spread: float = 0.0, bankroll: float = None) -> EdgeResult:
+        """Return the better of YES or NO, sized by Kelly."""
+        if bankroll: self.bankroll = bankroll
+        yes_r = self.calc_yes(model_prob, yes_price, spread)
+        no_r  = self.calc_no(model_prob, yes_price, spread)
+        # Pick higher edge
+        if yes_r.is_tradeable and no_r.is_tradeable:
+            best = yes_r if yes_r.edge >= no_r.edge else no_r
+        elif yes_r.is_tradeable:
+            best = yes_r
+        elif no_r.is_tradeable:
+            best = no_r
         else:
-            p, u = model_prob_result, 0.1
-        fee = 0.02
-        # Try YES side
-        P = market.mid_price
-        edge_yes = p - P - fee
-        # Try NO side
-        p_no = 1 - p
-        P_no = 1 - P
-        edge_no = p_no - P_no - fee
-        # Pick best
-        if edge_yes >= edge_no and edge_yes > 0:
-            side, edge, prob, price = "YES", edge_yes, p, P
-        elif edge_no > edge_yes and edge_no > 0:
-            side, edge, prob, price = "NO", edge_no, p_no, P_no
-        else:
-            return EdgeResult(side="YES", model_prob=p, market_price=P, edge=edge_yes,
-                ev_net=0, kelly_f=0, position_usd=0, is_tradeable=False, note="no edge")
-        # Kelly
-        b = (1 - price) / price
-        q = 1 - prob
-        kelly = max((b * prob - q) / b, 0)
-        f = min(kelly * cfg.risk.kelly_fraction, cfg.risk.max_bankroll_pct)
-        pos = min(self.bankroll * f, cfg.risk.max_order_usd)
-        ev_net = prob * (1 - price) - q * price - fee
-        return EdgeResult(side=side, model_prob=prob, market_price=price, edge=edge,
-            ev_net=ev_net, kelly_f=f, position_usd=pos,
-            is_tradeable=(pos >= 1.0 and edge >= cfg.risk.min_edge),
-            note=f"p={prob:.3f} P={price:.3f} edge={edge:+:.3f}")
+            # Return the one with highest edge for logging
+            best = yes_r if yes_r.edge >= no_r.edge else no_r
+            return best
+        # Size position
+        from config import cfg
+        kelly_fraction = cfg.risk.kelly_fraction
+        sized_kelly = best.kelly_f * kelly_fraction
+        position = min(
+            sized_kelly * self.bankroll,
+            cfg.risk.max_order_usd,
+            self.bankroll * cfg.risk.max_bankroll_pct
+        )
+        best.position_usd = round(max(1.0, position), 2)
+        return best
