@@ -1,13 +1,14 @@
 """
 market_scanner.py - Scans ALL Polymarket weather markets across multiple days.
-Inspired by ColdMath (83.7% win rate) and automatedAItradingbot strategies:
-- Scans YES and NO on every bin for every city for next 7 days
-- Parallel forecast fetching for speed
-- Min edge threshold, liquidity check, reward token filter
-- Deduplication to avoid re-entering existing positions
+Strategy based on top traders (ColdMath 83.7% WR, Hans323, aenews2):
+- Uses EdgeCalculator with day-of Kelly boost + NO side boost
+- Passes spread/confidence into edge calc for proper uncertainty discounting
+- Min $1000 volume filter (removes garbage low-liquidity markets)
+- Sorts by pure edge (spread already baked into edge via EdgeCalculator)
+- Skips markets closing in <2 hours (can't move price in time)
 """
 import logging, requests, re
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import List, Optional
@@ -24,13 +25,13 @@ class MarketOpportunity:
     question: str
     city: str
     target_date: date
-    side: str          # YES or NO
+    side: str
     model_prob: float
     market_price: float
     edge: float
     kelly_f: float
     position_usd: float
-    confidence: float  # model spread (lower = more confident)
+    confidence: float
     days_ahead: int
 
 def fetch_weather_markets(days_ahead: int = 7) -> list:
@@ -47,21 +48,25 @@ def fetch_weather_markets(days_ahead: int = 7) -> list:
         cutoff = today + timedelta(days=days_ahead)
         for ev in events:
             for m in ev.get("markets", []):
-                # Parse date from question
                 q = m.get("question", "")
-                date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+(\d+)', q)
+                date_match = re.search(
+                    r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+(\d+)', q
+                )
                 if date_match:
                     try:
-                        from datetime import datetime
                         mdate = datetime.strptime(
-                            f"{date_match.group(0)} {today.year}", "%b %d %Y"
+                            f"{date_match.group(1)[:3]} {date_match.group(2)} {today.year}",
+                            "%b %d %Y"
                         ).date()
-                        if today < mdate <= cutoff:
+                        # Handle year rollover
+                        if mdate < today - timedelta(days=30):
+                            mdate = mdate.replace(year=today.year + 1)
+                        if today <= mdate <= cutoff:
                             m["_target_date"] = mdate
                             m["_days_ahead"] = (mdate - today).days
                             markets.append(m)
-                    except: pass
-        log.info(f"Found {len(markets)} future weather markets ({days_ahead}-day window)")
+                    except:
+                        pass
         return markets
     except Exception as e:
         log.error(f"Market fetch failed: {e}")
@@ -72,48 +77,74 @@ def parse_city(question: str) -> Optional[str]:
     m = re.search(r'temperature in ([A-Z][\w\s]+?) (?:be|on)', question)
     if m:
         city = m.group(1).strip()
-        # Normalise known variants
         aliases = {
             "NYC": "New York", "New York City": "New York",
             "Buenos Aires": "Buenos Aires", "Sao Paulo": "Sao Paulo",
-            "Hong Kong": "Hong Kong", "Kuala Lumpur": "Kuala Lumpur"
+            "Hong Kong": "Hong Kong", "Kuala Lumpur": "Kuala Lumpur",
+            "Ho Chi Minh City": "Ho Chi Minh City"
         }
         return aliases.get(city, city)
     return None
 
 class MarketScanner:
+    MIN_VOLUME_USD = 1000   # ignore markets with <$1k volume (was $500)
+    MIN_HOURS_TO_CLOSE = 2  # skip markets closing in <2 hours
+
     def __init__(self):
         self.calc = EdgeCalculator(cfg.risk.paper_bankroll_usd)
-        self.existing_positions: set = set()  # condition_ids already held
+        self.existing_positions: set = set()
 
     def update_positions(self, open_positions: list):
-        """Load currently held positions to avoid re-entering."""
         self.existing_positions = {p.get("condition_id","") for p in open_positions}
 
-    def scan(self, forecasts: dict, days_ahead: int = 7) -> List[MarketOpportunity]:
-        """Full scan: all cities, all bins, YES+NO, next N days."""
-        markets = fetch_weather_markets(days_ahead)
-        if not markets:
-            return []
+    def _is_closing_soon(self, market: dict) -> bool:
+        """True if market closes within MIN_HOURS_TO_CLOSE hours."""
+        end_date = market.get("endDate") or market.get("end_date_iso")
+        if not end_date:
+            return False
+        try:
+            closes = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            hours_left = (closes - datetime.now(timezone.utc)).total_seconds() / 3600
+            return hours_left < self.MIN_HOURS_TO_CLOSE
+        except:
+            return False
 
+    def scan(self, forecasts: dict, markets: Optional[list] = None) -> List[MarketOpportunity]:
+        """
+        Main scan loop.
+        forecasts: {city: {"samples": [...], "std_c": float}}
+        markets: pre-fetched markets list (or None to fetch fresh)
+        """
+        if markets is None:
+            markets = fetch_weather_markets()
+
+        self.calc.update_bankroll(cfg.risk.paper_bankroll_usd)
         opportunities = []
         processed = set()
 
         for m in markets:
-            cid = m.get("conditionId", m.get("condition_id",""))
-            if cid in self.existing_positions:
-                continue  # already in this position
+            cid = m.get("conditionId") or m.get("condition_id","")
+            if not cid or cid in self.existing_positions:
+                continue
 
             q = m.get("question","")
             city = parse_city(q)
             if not city or city not in forecasts:
                 continue
 
-            # Dedup
-            key = f"{cid}"
+            key = cid
             if key in processed:
                 continue
             processed.add(key)
+
+            # Skip closing-soon markets
+            if self._is_closing_soon(m):
+                continue
+
+            # Liquidity filter — higher bar means better markets
+            vol = float(m.get("volume", m.get("volumeNum", 0)) or 0)
+            if vol < self.MIN_VOLUME_USD:
+                continue
 
             fc = forecasts.get(city)
             if not fc or not fc.get("samples"):
@@ -122,8 +153,9 @@ class MarketScanner:
             samples = fc["samples"]
             target_date = m.get("_target_date")
             days_ahead_val = m.get("_days_ahead", 1)
+            spread = float(fc.get("std_c", fc.get("model_spread", 1.5)))
 
-            # Parse bin from question
+            # Parse bin range
             from fast_pipeline import parse_bin_range
             try:
                 bin_range = parse_bin_range(q)
@@ -138,71 +170,51 @@ class MarketScanner:
             except:
                 continue
 
-            # Market price
-            prices = m.get("outcomePrices", "")
-            try:
-                if isinstance(prices, str):
-                    prices = [float(x) for x in prices.strip("[]").split(",")]
-                yes_price = float(prices[0]) if prices else 0.5
-            except:
-                yes_price = 0.5
-
-            no_price = 1 - yes_price
-
-            # Liquidity check
-            vol = float(m.get("volume", 0))
-            if vol < 500:
-                continue  # skip illiquid markets
-
-            # Reward token filter (skip reward-gated markets)
-            rewards = m.get("rewards", {})
-            if rewards.get("rewardsDailyRate", 0) > 0 and vol < 2000:
-                pass  # still trade if liquid enough
-
-            # Calculate YES edge
-            yes_edge = model_prob - yes_price - 0.02
-            no_edge_val = (1 - model_prob) - no_price - 0.02
-
-            # Size via Kelly
-            self.calc.update_bankroll(cfg.risk.paper_bankroll_usd)
-
-            for side, edge_val, prob_val, price_val in [
-                ("YES", yes_edge, model_prob, yes_price),
-                ("NO",  no_edge_val, 1-model_prob, no_price)
-            ]:
-                if edge_val < cfg.risk.min_edge:
-                    continue
-                # Kelly fraction
-                b = (1 - price_val) / price_val
-                kelly = max(0, (edge_val * (b + 1) - (1 - prob_val)) / b)
-                kelly_sized = kelly * cfg.risk.kelly_fraction
-                position_usd = min(
-                    kelly_sized * cfg.risk.paper_bankroll_usd,
-                    cfg.risk.max_order_usd,
-                    cfg.risk.paper_bankroll_usd * cfg.risk.max_bankroll_pct
-                )
-                if position_usd < 1.0:
+            # Get prices
+            outcomes = m.get("outcomes", [])
+            outprices = m.get("outcomePrices", m.get("prices", []))
+            if isinstance(outprices, str):
+                import json
+                try: outprices = json.loads(outprices)
+                except: continue
+            yes_price, no_price = 0.5, 0.5
+            if len(outprices) >= 2:
+                try:
+                    yes_price = float(outprices[0])
+                    no_price  = float(outprices[1])
+                except:
                     continue
 
-                opportunities.append(MarketOpportunity(
-                    condition_id=cid,
-                    question=q,
-                    city=city,
-                    target_date=target_date,
-                    side=side,
-                    model_prob=prob_val,
-                    market_price=price_val,
-                    edge=edge_val,
-                    kelly_f=kelly_sized,
-                    position_usd=round(position_usd, 2),
-                    confidence=fc.get("std_c", fc.get("model_spread", 1.5)),
-                    days_ahead=days_ahead_val
-                ))
+            # ── Use EdgeCalculator with all improvements ──
+            best = self.calc.best_side(
+                model_prob=model_prob,
+                yes_price=yes_price,
+                no_price=no_price,
+                spread=spread,
+                days_ahead=days_ahead_val
+            )
+            if best is None:
+                continue
 
-        # Sort by edge * confidence (high edge, low spread = best)
-        opportunities.sort(key=lambda x: x.edge / max(x.confidence, 0.1), reverse=True)
-        log.info(f"Found {len(opportunities)} opportunities across {days_ahead} days")
+            opportunities.append(MarketOpportunity(
+                condition_id=cid,
+                question=q,
+                city=city,
+                target_date=target_date,
+                side=best.side,
+                model_prob=best.model_prob,
+                market_price=best.market_price,
+                edge=best.edge,
+                kelly_f=best.kelly_f,
+                position_usd=round(best.position_usd, 2),
+                confidence=spread,
+                days_ahead=days_ahead_val
+            ))
+
+        # Sort by edge descending — best opportunities first
+        opportunities.sort(key=lambda x: x.edge, reverse=True)
+        log.info(f"Found {len(opportunities)} opportunities from {len(markets)} markets")
         return opportunities
 
-# Backwards compatibility alias
+# Alias for backwards compatibility
 WeatherMarket = MarketOpportunity
