@@ -33,9 +33,10 @@ def _warm_forecast_cache():
         _cache_warming = True
         warmed = 0
         today = date.today()
+        if not CITIES: time.sleep(5); continue
         for _days in range(0, 8):
             _tdate = today + timedelta(days=_days)
-            for _city in CITIES:
+            for _city in (CITIES if CITIES else []):
                 _key = f"{_city}_{_tdate}"
                 if _key not in _forecast_cache:
                     try:
@@ -51,8 +52,16 @@ def _warm_forecast_cache():
 
 # Start background cache warmer thread on import
 import threading
-_warmer_thread = threading.Thread(target=_warm_forecast_cache, daemon=True)
-_warmer_thread.start()
+# Thread started after first request to ensure CITIES is populated
+_warmer_started = False
+
+@app.before_request
+def start_warmer_once():
+    global _warmer_started
+    if not _warmer_started and CITIES:
+        _warmer_started = True
+        t = threading.Thread(target=_warm_forecast_cache, daemon=True)
+        t.start()
 
 CITIES = [
     # North America
@@ -278,7 +287,7 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
+    print("Telegram bot started ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
 
@@ -324,7 +333,7 @@ def forecast_city(city):
 @app.route("/api/scan")
 def scan():
     """Full scan: fetch markets + 4-model consensus forecast + edge detection."""
-    # Cache is maintained by background warmer thread — do not clear here
+    # Cache is maintained by background warmer thread â do not clear here
     try:
         resp = requests.get("https://gamma-api.polymarket.com/events",
             params={"tag_slug":"weather","active":"true","closed":"false","limit":"200",
@@ -337,7 +346,7 @@ def scan():
         results = []
         edges = []
 
-        # ââ Pre-fetch forecasts for all cities (once, not per-market) ââ
+        # Ã¢ÂÂÃ¢ÂÂ Pre-fetch forecasts for all cities (once, not per-market) Ã¢ÂÂÃ¢ÂÂ
         from probability_calculator import parse_bin_range, prob_for_bin
         city_forecast_cache = {}
         today = date.today()
