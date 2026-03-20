@@ -287,7 +287,7 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
+    print("Telegram bot started ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
 
@@ -321,22 +321,28 @@ def history(): return jsonify(_db_trades("closed", 50))
 def traders():
     """Proxy top weather traders from polymarketanalytics (CORS bypass)."""
     try:
-        limit = request.args.get("limit", "10")
-        resp = requests.get(
-            "https://polymarketanalytics.com/api/traders-tag-performance",
-            params={
-                "tag": "Weather", "sortDirection": "ASC",
-                "limit": limit, "offset": "0", "sortColumn": "rank",
-                "minPnL": "-59949", "maxPnL": "227556",
-                "minWinRate": "0", "maxWinRate": "97",
-                "minTotalPositions": "1", "maxTotalPositions": "19850"
-            },
-            timeout=10,
-            headers={"User-Agent": "WeatherEdge/1.0"}
-        )
+        limit = int(request.args.get("limit", "10"))
+        url = "https://polymarketanalytics.com/api/traders-tag-performance"
+        params = {
+            "tag": "Weather", "sortDirection": "ASC",
+            "limit": str(limit), "offset": "0", "sortColumn": "rank",
+            "minPnL": "-59949", "maxPnL": "227556",
+            "minWinRate": "0", "maxWinRate": "97",
+            "minTotalPositions": "1", "maxTotalPositions": "19850"
+        }
+        hdrs = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Origin": "https://polymarketanalytics.com",
+            "Referer": "https://polymarketanalytics.com/traders",
+        }
+        resp = requests.get(url, params=params, headers=hdrs, timeout=15)
         data = resp.json()
         traders_list = data.get("data", data) if isinstance(data, dict) else data
-        return jsonify({"traders": traders_list[:int(limit)], "total": len(traders_list)})
+        if not traders_list:
+            return jsonify({"error": "empty response from upstream", "traders": []}), 502
+        return jsonify({"traders": traders_list[:limit], "total": len(traders_list)})
     except Exception as e:
         return jsonify({"error": str(e), "traders": []}), 500
 
@@ -358,7 +364,7 @@ def forecast_city(city):
 @app.route("/api/scan")
 def scan():
     """Full scan: fetch markets + 4-model consensus forecast + edge detection."""
-    # Cache is maintained by background warmer thread ÃÂ¢ÃÂÃÂ do not clear here
+    # Cache is maintained by background warmer thread ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ do not clear here
     try:
         resp = requests.get("https://gamma-api.polymarket.com/events",
             params={"tag_slug":"weather","active":"true","closed":"false","limit":"200",
@@ -371,7 +377,7 @@ def scan():
         results = []
         edges = []
 
-        # ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Pre-fetch forecasts for all cities (once, not per-market) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
+        # ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Pre-fetch forecasts for all cities (once, not per-market) ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ
         from probability_calculator import parse_bin_range, prob_for_bin
         city_forecast_cache = {}
         today = date.today()
@@ -421,7 +427,7 @@ def scan():
 
                 # Look up from pre-fetched cache (no per-market API call)
                 _cache_key = f"{city}_{target_date}" if target_date else None
-                fc = _forecast_cache.get(_cache_key)  # Cache only â no blocking API calls in scan
+                fc = _forecast_cache.get(_cache_key)  # Cache only Ã¢ÂÂ no blocking API calls in scan
                 no_price = round(1.0 - yes_price, 4)
                 days_ahead = (target_date - date.today()).days if target_date else 0
 
