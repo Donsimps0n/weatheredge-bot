@@ -248,7 +248,7 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started ÃÂ¢ÃÂÃÂ t.me/Aidolf_bot")
+    print("Telegram bot started ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
 
@@ -350,7 +350,7 @@ def scan():
                 best_edge = 0.0
                 if fc and fc.get("samples"):
                     from probability_calculator import prob_for_bin
-                    from fast_pipeline import parse_bin_range
+                    from probability_calculator import parse_bin_range, BinRange
                     try:
                         br = parse_bin_range(mkt.get("question",""))
                         if br:
