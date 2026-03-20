@@ -248,7 +248,7 @@ def _add_log(msg, level="info"):
 try:
     from telegram_bot import start_telegram_bot
     start_telegram_bot()
-    print("Telegram bot started Ã¢ÂÂ t.me/Aidolf_bot")
+    print("Telegram bot started ÃÂ¢ÃÂÃÂ t.me/Aidolf_bot")
 except Exception as e:
     print(f"Telegram bot failed: {e}")
 
@@ -337,15 +337,54 @@ def scan():
                 yes_price = float(prices[0]) if prices else 0.5
                 vol = float(mkt.get("volume") or 0)
 
+                # 4-model consensus for this market
+                fc = consensus_forecast(city, target_date) if target_date else None
+                no_price = round(1.0 - yes_price, 4)
+                days_ahead = (target_date - date.today()).days if target_date else 0
+
+                # Edge calculation both sides
+                model_prob = None
+                yes_edge = None
+                no_edge = None
+                best_side = "YES"
+                best_edge = 0.0
+                if fc and fc.get("samples"):
+                    from probability_calculator import prob_for_bin
+                    from fast_pipeline import parse_bin_range
+                    try:
+                        br = parse_bin_range(mkt.get("question",""))
+                        if br:
+                            mp, conf = prob_for_bin(fc["samples"], br)
+                            model_prob = round(mp, 4)
+                            spread = fc.get("std_c", fc.get("model_spread", 1.5))
+                            yes_edge = round(mp - yes_price - 0.02, 4)
+                            no_edge = round((1-mp) - no_price - 0.02, 4)
+                            if no_edge > yes_edge:
+                                best_side = "NO"
+                                best_edge = no_edge
+                            else:
+                                best_side = "YES"
+                                best_edge = yes_edge
+                    except: pass
+
                 result = {
                     "city": city,
                     "question": mkt.get("question",""),
-                    "yes_price": round(yes_price, 4),
                     "condition_id": mkt.get("conditionId",""),
+                    "yes_price": round(yes_price, 4),
+                    "no_price": no_price,
                     "volume": round(vol, 2),
                     "target_date": str(target_date) if target_date else None,
+                    "days_ahead": days_ahead,
+                    "model_prob": model_prob,
+                    "yes_edge": yes_edge,
+                    "no_edge": no_edge,
+                    "best_side": best_side,
+                    "best_edge": round(best_edge, 4) if best_edge else None,
                 }
                 results.append(result)
+                if best_edge and best_edge >= 0.05:
+                    edges.append(result)
 
         _stats["markets_scanned"] = total_markets
         _stats["last_scan"] = datetime.now(timezone.utc).isoformat()
@@ -354,7 +393,9 @@ def scan():
         return jsonify({
             "markets": total_markets,
             "events": len(events),
-            "results": sorted(results, key=lambda x: x["volume"], reverse=True)[:50],
+            "results": sorted([r for r in results if r.get("days_ahead",0) >= 0],
+                key=lambda x: abs(x.get("best_edge") or 0), reverse=True)[:200],
+            "edges": sorted(edges, key=lambda x: abs(x.get("best_edge") or 0), reverse=True),
             "models_active": _stats["models"],
         })
     except Exception as e:
