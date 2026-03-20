@@ -9,7 +9,7 @@ API_BASE=f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 RAILWAY_API="https://weatheredge-production.up.railway.app"
 SUBSCRIBERS_FILE=Path("data/telegram_subscribers.json")
 _subscribers=set()
-SYSTEM_PROMPT="""You are WeatherEdge AI — expert in Polymarket weather trading. You help manage the bot, analyse markets, find edges. Keep replies short and punchy for Telegram. The user built this with Claude. Stack: Railway, Vercel, Polymarket, GFS+ECMWF+UKMO+MeteoFrance. Bot is in PAPER mode. Use emojis naturally."""
+SYSTEM_PROMPT="""You are WeatherEdge AI â expert in Polymarket weather trading. You help manage the bot, analyse markets, find edges. Keep replies short and punchy for Telegram. The user built this with Claude. Stack: Railway, Vercel, Polymarket, GFS+ECMWF+UKMO+MeteoFrance. Bot is in PAPER mode. Use emojis naturally."""
 
 def load_subs():
     global _subscribers
@@ -39,7 +39,16 @@ def ask_claude(msg,ctx=""):
         r=requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-sonnet-4-20250514","max_tokens":1024,"system":SYSTEM_PROMPT,"messages":messages},timeout=30)
-        return r.json()["content"][0]["text"]
+        d=r.json()
+        if "content" in d and d["content"]:
+            return d["content"][0]["text"]
+        elif "error" in d:
+            err=d["error"]
+            if err.get("type")=="authentication_error":
+                return "API key issue - check Railway env vars"
+            return f"API error: {err.get('message','unknown')}"
+        else:
+            return f"Unexpected response: {str(d)[:200]}"
     except Exception as e: return f"Claude error: {e}"
 
 def live_ctx():
