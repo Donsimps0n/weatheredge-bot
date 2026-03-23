@@ -357,62 +357,61 @@ def traders():
 
 @app.route("/api/forecast/<city>")
 def forecast_city(city):
-    """Get forecast for a single city. Used by weather map and telegram bot."""
-    from datetime import date, timedelta
+    """Get forecast for a single city."""
+    from datetime import date as _date, timedelta
     days_ahead = int(request.args.get("days", 1))
-    target = date.today() + timedelta(days=days_ahead)
+    target = _date.today() + timedelta(days=days_ahead)
     city_key = city.replace("-", " ").title()
-    # Try cache first
-    cached = _forecast_cache.get(city_key)
-    if cached:
-        samples = cached.get("samples", [])
-        import numpy as np
-        arr = np.array(samples) if samples else np.array([])
+    cache_key = city_key + "_" + str(target)
+    fc = _forecast_cache.get(cache_key)
+    if fc and isinstance(fc, dict):
         return jsonify({
             "city": city_key,
             "date": str(target),
-            "temp_c": round(float(arr.mean()), 1) if len(arr) else None,
-            "temp_min_c": round(float(arr.min()), 1) if len(arr) else None,
-            "temp_max_c": round(float(arr.max()), 1) if len(arr) else None,
-            "std_c": round(float(arr.std()), 2) if len(arr) else None,
-            "n_samples": len(arr),
+            "temp_c": fc.get("mean_c"),
+            "std_c":  fc.get("std_c"),
+            "n_samples": len(fc.get("samples", [])),
             "source": "cache"
         })
-    # Live fetch fallback
+    # live fetch fallback
     try:
-        fc = consensus_forecast(city_key, target)
-        if fc:
-            return jsonify({"city": city_key, "date": str(target), **fc})
-    except Exception as e:
-        pass
+        fc2 = consensus_forecast(city_key, target)
+        if fc2:
+            return jsonify({"city": city_key, "date": str(target),
+                "temp_c": fc2.get("mean_c"), "std_c": fc2.get("std_c"),
+                "n_samples": len(fc2.get("samples",[])), "source": "live"})
+    except Exception: pass
     return jsonify({"error": f"No forecast for {city_key}"}), 404
-
 
 @app.route("/api/map")
 def weather_map():
-    """Return current temps for all cached cities. One call for entire map."""
-    import numpy as np
-    from datetime import date
-    today = str(date.today())
+    """All cached city temps for weather map — one call for 60 cities."""
+    from datetime import date as _date
+    today = str(_date.today())
     result = {}
     for key, fc in _forecast_cache.items():
-        # Keys are stored as "CityName_YYYY-MM-DD" or just forecast dicts
-        if isinstance(fc, dict):
+        if not isinstance(fc, dict): continue
+        # Key format: "CityName_YYYY-MM-DD"
+        if "_" + today not in key: continue
+        city = key.replace("_" + today, "")
+        mean = fc.get("mean_c")
+        if mean is None:
             samples = fc.get("samples", [])
-            if not samples: continue
-            # Extract city name from key
-            city = key.replace("_" + today, "") if ("_" + today) in key else key
-            arr = np.array(samples)
+            if samples: mean = round(sum(samples)/len(samples), 1)
+        if mean is not None:
             result[city] = {
-                "temp_c": round(float(arr.mean()), 1),
-                "std_c": round(float(arr.std()), 2),
-                "n": len(arr)
+                "temp_c": round(float(mean), 1),
+                "std_c":  round(float(fc.get("std_c", 1.5)), 2),
+                "n":      len(fc.get("samples", []))
             }
-    return jsonify({"cities": result, "count": len(result), "date": today})            "std_c": round(float(arr.std()), 2),
-                "n": len(arr)
-            }
-    return jsonify({"cities": result, "count": len(result), "date": str(date.today())})
+    return jsonify({"cities": result, "count": len(result), "date": today})
 
+
+@app.route("/api/cache/keys")
+def cache_keys():
+    """Debug: show first 10 cache keys to verify format."""
+    keys = list(_forecast_cache.keys())[:10]
+    return jsonify({"keys": keys, "total": len(_forecast_cache)})
 
 @app.route("/api/scan")
 def scan_markets():
