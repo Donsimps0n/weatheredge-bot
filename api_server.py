@@ -49,7 +49,7 @@ def _warm_forecast_cache():
         _cache_warming = False
         _add_log(f"Cache warm complete: {warmed} new forecasts ({len(_forecast_cache)} total)")
         time.sleep(1800)
-            _calibrator.fit()  # refit calibration every 30 min  # re-warm every 30 minutes
+        _calibrator.fit()  # refit calibration every 30 min
 
 # Start background cache warmer thread on import
 import threading
